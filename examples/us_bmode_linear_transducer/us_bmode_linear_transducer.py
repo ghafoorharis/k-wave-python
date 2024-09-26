@@ -4,10 +4,10 @@ import scipy.io
 import matplotlib.pyplot as plt
 
 
-from examples.us_bmode_linear_transducer.example_utils import download_if_does_not_exist
-from kwave.data import Vector
-from kwave.kgrid import kWaveGrid
-from kwave.kmedium import kWaveMedium
+# from examples.us_bmode_linear_transducer.example_utils import download_if_does_not_exist
+from kwave.data import Vector # type: ignore
+from kwave.kgrid import kWaveGrid # type: ignore
+from kwave.kmedium import kWaveMedium # type: ignore
 from kwave.kspaceFirstOrder3D import kspaceFirstOrder3D
 from kwave.ktransducer import NotATransducer, kWaveTransducerSimple
 from kwave.options.simulation_execution_options import SimulationExecutionOptions
@@ -18,30 +18,25 @@ from kwave.utils.filters import gaussian_filter
 from kwave.utils.conversion import db2neper
 from kwave.reconstruction.tools import log_compression
 from kwave.reconstruction.beamform import envelope_detection
+from kwave.utils.mapgen import make_ball
+from us_bmode_linear_transducer.funs.artifacts import get_phantom_data_circle, get_3d_circle
+from us_bmode_linear_transducer.utils_ex.sim_params import Params
 
+# SENSOR_DATA_GDRIVE_ID = "1lGFTifpOrzBYT4Bl_ccLu_Kx0IDxM0Lv"
+# PHANTOM_DATA_GDRIVE_ID = "1ZfSdJPe8nufZHz0U9IuwHR4chaOGAWO4"
+# PHANTOM_DATA_PATH = "phantom_data.mat"
 
-SENSOR_DATA_GDRIVE_ID = "1lGFTifpOrzBYT4Bl_ccLu_Kx0IDxM0Lv"
-PHANTOM_DATA_GDRIVE_ID = "1ZfSdJPe8nufZHz0U9IuwHR4chaOGAWO4"
-PHANTOM_DATA_PATH = "phantom_data.mat"
-
-# simulation settings
-DATA_CAST = "single"
-RUN_SIMULATION = False
-
-pml_size_points = Vector([20, 10, 10])  # [grid points]
-grid_size_points = Vector([256, 128, 128]) - 2 * pml_size_points  # [grid points]
-grid_size_meters = 40e-3  # [m]
-grid_spacing_meters = grid_size_meters / Vector([grid_size_points.x, grid_size_points.x, grid_size_points.x])
-
-c0 = 1540
-rho0 = 1000
-source_strength = 1e6  # [Pa]
-tone_burst_freq = 1.5e6  # [Hz]
-tone_burst_cycles = 4
-number_scan_lines = 96
-
+args = Params()
+grid_size_points = args.grid_size_points
+grid_spacing_meters = args.grid_spacing_meters
+c0 = args.c0
+rho0 = args.rho0
+tone_burst_freq = args.tone_burst_freq
+tone_burst_cycles = args.tone_burst_cycles
+SOME_TIME_CONSTANT = args.SOME_TIME_CONSTANT
+source_strength = args.source_strength
 kgrid = kWaveGrid(grid_size_points, grid_spacing_meters)
-t_end = (grid_size_points.x * grid_spacing_meters.x) * 2.2 / c0  # [s]
+t_end = (grid_size_points.x * grid_spacing_meters.x) * SOME_TIME_CONSTANT / c0  # [s]
 kgrid.makeTime(c0, t_end=t_end)
 
 input_signal = tone_burst(1 / kgrid.dt, tone_burst_freq, tone_burst_cycles)
@@ -49,30 +44,43 @@ input_signal = (source_strength / (c0 * rho0)) * input_signal
 
 medium = kWaveMedium(
     sound_speed=None,  # will be set later
-    alpha_coeff=0.75,
-    alpha_power=1.5,
-    BonA=6,
+    alpha_coeff=args.alpha_coeff,
+    alpha_power=args.alpha_power,
+    BonA=args.BonA,
 )
 
 transducer = dotdict()
 transducer.number_elements = 32  # total number of transducer elements
 transducer.element_width = 2  # width of each element [grid points/voxels]
 transducer.element_length = 24  # length of each element [grid points/voxels]
-transducer.element_spacing = 0  # spacing (kerf  width) between the elements [grid points/voxels]
+transducer.element_spacing = (
+    0  # spacing (kerf  width) between the elements [grid points/voxels]
+)
 transducer.radius = float("inf")  # radius of curvature of the transducer [m]
 
 # calculate the width of the transducer in grid points
-transducer_width = transducer.number_elements * transducer.element_width + (transducer.number_elements - 1) * transducer.element_spacing
+transducer_width = (
+    transducer.number_elements * transducer.element_width
+    + (transducer.number_elements - 1) * transducer.element_spacing
+)
 
 # use this to position the transducer in the middle of the computational grid
-transducer.position = np.round([1, grid_size_points.y / 2 - transducer_width / 2, grid_size_points.z / 2 - transducer.element_length / 2])
+transducer.position = np.round(
+    [
+        1,
+        grid_size_points.y / 2 - transducer_width / 2,
+        grid_size_points.z / 2 - transducer.element_length / 2,
+    ]
+)
 transducer = kWaveTransducerSimple(kgrid, **transducer)
 
 
 not_transducer = dotdict()
 not_transducer.sound_speed = c0  # sound speed [m/s]
 not_transducer.focus_distance = 20e-3  # focus distance [m]
-not_transducer.elevation_focus_distance = 19e-3  # focus distance in the elevation plane [m]
+not_transducer.elevation_focus_distance = (
+    19e-3  # focus distance in the elevation plane [m]
+)
 not_transducer.steering_angle = 0  # steering angle [degrees]
 not_transducer.transmit_apodization = "Hanning"
 not_transducer.receive_apodization = "Rectangular"
@@ -83,37 +91,56 @@ not_transducer = NotATransducer(transducer, kgrid, **not_transducer)
 
 
 logging.log(logging.INFO, "Fetching phantom data...")
-download_if_does_not_exist(PHANTOM_DATA_GDRIVE_ID, PHANTOM_DATA_PATH)
+# download_if_does_not_exist(PHANTOM_DATA_GDRIVE_ID, PHANTOM_DATA_PATH)
+phantom = get_phantom_data_circle(
+    kgrid=kgrid,
+    c0=c0,
+    rho0=rho0,
+    background_map_mean=1,
+    background_map_std=0.008,
+    object_map_mean=25,
+    object_map_std=75,
+    object_map_radius=8e-3,
+    object_map_center_x=32e-3,
+    object_map_center_y=2,
+    object_map_center_z=2,
+    density_constant_multiplier=1.5,
+    lower_amplitude=1400,
+    upper_amplitude=1600,
+)
 
-phantom = scipy.io.loadmat(PHANTOM_DATA_PATH)
 sound_speed_map = phantom["sound_speed_map"]
 density_map = phantom["density_map"]
 
-logging.log(logging.INFO, f"RUN_SIMULATION set to {RUN_SIMULATION}")
+# logging.log(logging.INFO, f"RUN_SIMULATION set to {RUN_SIMULATION}")
 
 # preallocate the storage set medium position
-scan_lines = np.zeros((number_scan_lines, kgrid.Nt))
+scan_lines = np.zeros((args.number_scan_lines, kgrid.Nt))
 medium_position = 0
 
-for scan_line_index in range(0, number_scan_lines):
+for scan_line_index in range(0, args.number_scan_lines):
     # load the current section of the medium
-    medium.sound_speed = sound_speed_map[:, medium_position : medium_position + grid_size_points.y, :]
-    medium.density = density_map[:, medium_position : medium_position + grid_size_points.y, :]
+    medium.sound_speed = sound_speed_map[
+        :, medium_position : medium_position + grid_size_points.y, :
+    ]
+    medium.density = density_map[
+        :, medium_position : medium_position + grid_size_points.y, :
+    ]
 
     # set the input settings
     input_filename = f"example_input_{scan_line_index}.h5"
     # set the input settings
     simulation_options = SimulationOptions(
         pml_inside=False,
-        pml_size=pml_size_points,
-        data_cast=DATA_CAST,
+        pml_size=args.pml_size_points,
+        data_cast=args.DATA_CAST,
         data_recast=True,
         save_to_disk=True,
         input_filename=input_filename,
         save_to_disk_exit=False,
     )
     # run the simulation
-    if RUN_SIMULATION:
+    if args.RUN_SIMULATION:
         sensor_data = kspaceFirstOrder3D(
             medium=medium,
             kgrid=kgrid,
@@ -123,19 +150,21 @@ for scan_line_index in range(0, number_scan_lines):
             execution_options=SimulationExecutionOptions(is_gpu_simulation=True),
         )
 
-        scan_lines[scan_line_index, :] = not_transducer.scan_line(not_transducer.combine_sensor_data(sensor_data["p"].T))
+        scan_lines[scan_line_index, :] = not_transducer.scan_line(
+            not_transducer.combine_sensor_data(sensor_data["p"].T)
+        )
 
     # update medium position
     medium_position = medium_position + transducer.element_width
 
-if RUN_SIMULATION:
+if args.RUN_SIMULATION:
     simulation_data = scan_lines
     scipy.io.savemat("sensor_data.mat", {"sensor_data_all_lines": simulation_data})
 
 else:
     logging.log(logging.INFO, "Downloading data from remote server...")
     sensor_data_path = "sensor_data.mat"
-    download_if_does_not_exist(SENSOR_DATA_GDRIVE_ID, sensor_data_path)
+    # download_if_does_not_exist(SENSOR_DATA_GDRIVE_ID, sensor_data_path)
 
     simulation_data = scipy.io.loadmat(sensor_data_path)["sensor_data_all_lines"]
 
@@ -150,7 +179,10 @@ scan_lines = simulation_data
 # Trim the delay offset from the scan line data
 tukey_win, _ = get_win(kgrid.Nt * 2, "Tukey", False, 0.05)
 transmit_len = len(input_signal.squeeze())
-scan_line_win = np.concatenate((np.zeros([1, transmit_len * 2]), tukey_win.T[:, : kgrid.Nt - transmit_len * 2]), axis=1)
+scan_line_win = np.concatenate(
+    (np.zeros([1, transmit_len * 2]), tukey_win.T[:, : kgrid.Nt - transmit_len * 2]),
+    axis=1,
+)
 
 scan_lines = scan_lines * scan_line_win
 
@@ -187,7 +219,9 @@ scan_lines_tgc = scan_lines[len(scan_lines) // 2, :]
 
 
 scan_lines_fund = gaussian_filter(scan_lines, 1 / kgrid.dt, tone_burst_freq, 100)
-scan_lines_harm = gaussian_filter(scan_lines, 1 / kgrid.dt, 2 * tone_burst_freq, 30)  # plotting was not impl.
+scan_lines_harm = gaussian_filter(
+    scan_lines, 1 / kgrid.dt, 2 * tone_burst_freq, 30
+)  # plotting was not impl.
 
 # store intermediate results
 scan_lines_fund_ex = scan_lines_fund[len(scan_lines_fund) // 2, :]
@@ -237,21 +271,35 @@ plt.ion()
 plt.figure(figsize=(14, 4))
 # plot the sound speed map
 plt.subplot(1, 3, 1)
-plt.imshow(sound_speed_map[:, 64:-64, int(grid_size_points.z / 2)], aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]])
+plt.imshow(
+    sound_speed_map[:, 64:-64, int(grid_size_points.z / 2)],
+    aspect="auto",
+    extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]],
+)
 plt.title("Sound Speed")
 plt.xlabel("Width [mm]")
 plt.ylabel("Depth [mm]")
 ax = plt.gca()
 ax.set_ylim(40, 5)
 plt.subplot(1, 3, 2)
-plt.imshow(scan_lines_fund.T, cmap="grey", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]])
+plt.imshow(
+    scan_lines_fund.T,
+    cmap="grey",
+    aspect="auto",
+    extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]],
+)
 plt.xlabel("Width [mm]")
 plt.title("Fundamental")
 ax = plt.gca()
 ax.set_ylim(40, 5)
 plt.yticks([])
 plt.subplot(1, 3, 3)
-plt.imshow(scan_lines_harm.T, cmap="grey", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]])
+plt.imshow(
+    scan_lines_harm.T,
+    cmap="grey",
+    aspect="auto",
+    extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]],
+)
 plt.yticks([])
 plt.xlabel("Width [mm]")
 plt.title("Harmonic")
@@ -259,9 +307,7 @@ ax = plt.gca()
 ax.set_ylim(40, 5)
 plt.tight_layout()
 
-
-# In[ ]:
-
+# Display the plots for 120 seconds
 
 # Creating a dictionary with the step labels as keys
 processing_steps = {

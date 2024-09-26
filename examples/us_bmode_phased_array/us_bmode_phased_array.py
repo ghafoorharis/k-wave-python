@@ -21,7 +21,7 @@ from kwave.utils.mapgen import make_ball
 
 # simulation settings
 DATA_CAST = "single"
-RUN_SIMULATION = True
+RUN_SIMULATION = False
 
 
 pml_size_points = Vector([15, 10, 10])  # [grid points]
@@ -225,7 +225,7 @@ x_axis = [0, image_size[0] * 1e3]  # [mm]
 y_axis = [0, image_size[1] * 1e3]  # [mm]
 
 
-plt.ion()
+# plt.ion()
 plt.figure(figsize=(15, 4))
 plt.subplot(131)
 plt.imshow(
@@ -263,13 +263,13 @@ plt.ylabel("Depth [mm]")
 plt.title("Scattering Phantom")
 
 plt.subplot(132)
-plt.imshow(b_mode_fund, cmap="bone", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
+plt.imshow(b_mode_fund, cmap="gray", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
 plt.xlabel("Horizontal Position [mm]")
 plt.ylabel("Depth [mm]")
 plt.title("B-Mode Image")
 
 plt.subplot(133)
-plt.imshow(b_mode_harm, cmap="bone", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
+plt.imshow(b_mode_harm, cmap="gray", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
 plt.xlabel("Horizontal Position [mm]")
 plt.ylabel("Depth [mm]")
 plt.title("Harmonic Image")
