@@ -1,4 +1,6 @@
 import json
+import scipy.io
+
 from utils_ex.sim_params import Params
 from utils_ex.helper import (
     get_transducer,
@@ -27,6 +29,7 @@ def run_simulation(args: Params):
     print("Running Simulation")
     # define the grid
     grid_size_points = args.grid_size_points
+    grid_size_points.y = grid_size_points.y + args.number_scan_lines * args.transducer_element_width
     grid_spacing_meters = args.grid_spacing_meters
     c0 = args.c0
     rho0 = args.rho0
@@ -36,13 +39,14 @@ def run_simulation(args: Params):
     source_strength = args.source_strength
     # create the computational grid
     print("Definign the grid")
-    kgrid = make_grid(grid_size_points, grid_spacing_meters, c0, SOME_TIME_CONSTANT)
+    t_end = (grid_size_points.x * grid_spacing_meters.x) * SOME_TIME_CONSTANT / c0  # [s]
+    kgrid = make_grid(grid_size_points, grid_spacing_meters, c0, t_end=t_end)
     # create the time array and input signal
     print("Defining the input signal")
     input_signal = get_input_signal(kgrid, tone_burst_freq, tone_burst_cycles, source_strength, c0, rho0)
     # define the transducer properties
     print("Defining the transducer")
-    not_transducer,transducer = get_transducer(grid_size_points, input_signal, kgrid, c0)
+    not_transducer,transducer = get_transducer(grid_size_points, input_signal, kgrid, c0,sc = args.sc)
     # define the medium properties
     medium = kWaveMedium(
         sound_speed=None,  # will be set later
@@ -55,11 +59,13 @@ def run_simulation(args: Params):
     phantom = get_phantom_data_circle(
                                     kgrid=kgrid,
                                     params = args.__dict__,
-                                    debug = True
+                                    debug = True,
+                                    element_width =transducer.element_width,
+
                                     )
     # get the phantom data and set the medium properties
     medium.sound_speed = phantom["sound_speed_map"]
-    medium.density_map = phantom["density_map"]
+    medium.density = phantom["density_map"]
     # run the simulation to get scan lines
     print("Running the simulation")
     scan_lines = solve_kspace_problem(
@@ -80,7 +86,8 @@ def run_simulation(args: Params):
                             scan_lines=scan_lines,
                             tone_burst_freq=tone_burst_freq,
                             c0=c0,
-                            args=args)
+                            args=args.__dict__,
+                            t_end=t_end)
     # Save the parameters
     print("Saving the parameters")
     save_json(args)

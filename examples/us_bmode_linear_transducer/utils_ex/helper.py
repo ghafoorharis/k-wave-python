@@ -42,12 +42,12 @@ def get_input_signal(
 
 
 # define the transducer properties
-def get_transducer(grid_size_points, input_signal, kgrid, c0):
+def get_transducer(grid_size_points, input_signal, kgrid, c0,param_elem_width  = 2,sc = 1):
 
     transducer = dotdict()
-    transducer.number_elements = 32  # total number of transducer elements
-    transducer.element_width = 2  # width of each element [grid points/voxels]
-    transducer.element_length = 24  # length of each element [grid points/voxels]
+    transducer.number_elements = 32 /sc # total number of transducer elements
+    transducer.element_width = param_elem_width  # width of each element [grid points/voxels]
+    transducer.element_length = 24 /sc  # length of each element [grid points/voxels]
     transducer.element_spacing = (
         0  # spacing (kerf  width) between the elements [grid points/voxels]
     )
@@ -114,6 +114,8 @@ def solve_kspace_problem(
     medium_position = 0
 
     for scan_line_index in range(0, args.number_scan_lines):
+        print(f"Computing scan line {scan_line_index} of {args.number_scan_lines}")
+
         # load the current section of the medium
         medium.sound_speed = sound_speed_map[
             :, medium_position : medium_position + grid_size_points.y, :
@@ -168,7 +170,8 @@ def solve_kspace_problem(
 
 
 def process_simulation_data(
-    kgrid, medium, input_signal, scan_lines, tone_burst_freq, c0, args
+    kgrid, medium, input_signal, scan_lines, tone_burst_freq, c0, args,
+    t_end
 ):
     """This function contains the processoing of scan lines that results in the b-mode image
     Args:
@@ -176,17 +179,17 @@ def process_simulation_data(
     Returns:
         B-mode image: np.array
     """
-    debug = args.debug
-    SHIFTING_SAMP_FREQ = args.SHIFTING_SAMP_FREQ
-    BW_FUND = args.BW_FUND
-    BW_HARM = args.BW_HARM
+    debug = args["debug"]
+    SHIFTING_SAMP_FREQ = args["SHIFTING_SAMP_FREQ"]
+    BW_FUND = args["BW_FUND"]
+    BW_HARM = args["BW_HARM"]
 
     # trim the offset delay and remove the input signal from the scan lines
     scan_lines, scan_lines_no_input = trim_offset_delay(
         kgrid=kgrid, input_signal=input_signal, tukey_win=None, scan_lines=scan_lines
     )
     # apply time gain compensation
-    scan_lines, scan_lines_tgc = time_gain_compensation(
+    scan_lines, scan_lines_tgc, r = time_gain_compensation(
         input_signal=input_signal,
         scan_lines=scan_lines,
         kgrid=kgrid,
@@ -208,18 +211,35 @@ def process_simulation_data(
     )
     # apply envelope detection
     scan_lines_fund, scan_lines_harm, scan_lines_fund_env_ex, scan_lines_harm_env_ex = (
-        envelope_detection(
+        detect_env(
             scan_lines_fund=scan_lines_fund, scan_lines_harm=scan_lines_harm
         )
     )
     # apply log compression
     scan_lines_fund, scan_lines_harm, scan_lines_fund_log_ex, scan_lines_harm_log_ex = (
-        log_compression(
+        compress_log(
             scan_lines_fund=scan_lines_fund,
             scan_lines_harm=scan_lines_harm,
-            compression_ratio=args.COMPRESSION_RATIO,
+            compression_ratio=args["COMPRESSION_RATIO"],
         )
     )
+    # # Intepolate the scan lines to the grid size
+    # from scipy.interpolate import interp2d
+
+    # def interp2(x, y, z, xi, yi):
+    #     f = interp2d(x, y, z, kind='linear')
+    #     zi = f(xi, yi)
+    #     return zi
+
+    # # Example usage:
+    # x = np.arange(1, kgrid.Nt + 1)
+    # y = np.arange(1, args["number_scan_lines"] + 1)
+    # xi = np.linspace(1, kgrid.Nt, kgrid.Nt)
+    # yi = np.linspace(1, args["number_scan_lines"], args["number_scan_lines"] * 2)  # Upsampling
+
+    # scan_lines_fund = interp2(x, y, scan_lines_fund, xi, yi)
+    # scan_lines_harm = interp2(x, y, scan_lines_harm, xi, yi)
+
     if debug:
         visualize_receiver_part(kgrid=kgrid, sound_speed_map=medium.sound_speed,
                                 scan_lines_no_input=scan_lines_no_input,
@@ -229,9 +249,9 @@ def process_simulation_data(
                                 scan_lines_fund_log_ex=scan_lines_fund_log_ex,
                                 scan_lines_fund=scan_lines_fund,
                                 scan_lines_harm=scan_lines_harm,
-                                grid_size_points=args.grid_size_points,
-                                c0=args.c0,
-                                t_end=kgrid.t_end,
+                                grid_size_points=args["grid_size_points"],
+                                c0=args["c0"],
+                                t_end=t_end,
                                 args=args
                                 )
                                 
@@ -244,6 +264,7 @@ def process_simulation_data(
         scan_lines_harm_env_ex,
         scan_lines_fund_log_ex,
         scan_lines_harm_log_ex,
+        r
     )
 
 
@@ -289,7 +310,7 @@ def time_gain_compensation(
 
     # store intermediate results
     scan_lines_tgc = scan_lines[len(scan_lines) // 2, :]
-    return scan_lines, scan_lines_tgc
+    return scan_lines, scan_lines_tgc,r
 
 
 def filtering(scan_lines, kgrid, tone_burst_freq, SHIFTING_SAMP_FREQ, BW_FUND, BW_HARM):
@@ -305,7 +326,7 @@ def filtering(scan_lines, kgrid, tone_burst_freq, SHIFTING_SAMP_FREQ, BW_FUND, B
     return scan_lines_fund, scan_lines_harm, scan_lines_fund_ex, scan_lines_harm_ex
 
 
-def envelope_detection(scan_lines_fund, scan_lines_harm):
+def detect_env(scan_lines_fund, scan_lines_harm):
     scan_lines_fund = envelope_detection(scan_lines_fund)
     scan_lines_harm = envelope_detection(scan_lines_harm)
     # store intermediate results
@@ -319,7 +340,9 @@ def envelope_detection(scan_lines_fund, scan_lines_harm):
     )
 
 
-def log_compression(compression_ratio=3):
+def compress_log(scan_lines_fund,
+                 scan_lines_harm,
+                 compression_ratio=3):
     scan_lines_fund = log_compression(scan_lines_fund, compression_ratio, True)
     scan_lines_harm = log_compression(scan_lines_harm, compression_ratio, True)
     # store intermediate results
