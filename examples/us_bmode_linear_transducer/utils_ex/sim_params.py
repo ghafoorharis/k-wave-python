@@ -7,7 +7,7 @@ class Params:
     def __init__(self):
         # Initialization
         self.DATA_CAST = "single"
-        self.RUN_SIMULATION = True
+        self.RUN_SIMULATION = False
         self.experiment_name = "exp_9_circle_normal_noise"
         self.RESULTS_DIR = os.path.join(
             "C:/Users/CMME3/Documents/GitHub/k-wave-python/examples/us_bmode_linear_transducer",

@@ -11,6 +11,7 @@ import os
 from kwave.data import Vector  # type: ignore
 from kwave.utils.mapgen import make_ball  # type: ignore
 from kwave.kgrid import kWaveGrid  # type: ignore
+from kwave.reconstruction.beamform import envelope_detection, scan_conversion
 
 def get_phantom_data_circle(
     kgrid,
@@ -351,3 +352,78 @@ def visualize_receiver_part(
         plt.show()
     else:
         plt.close()
+
+
+def plot_data_using_phaser_template(
+    scan_lines,
+    scan_lines_fund,
+    scan_lines_harm,
+    steering_angles,
+    c0,
+    kgrid,
+    medium,
+
+):
+    # Visualization
+    image_size = [kgrid.Nx * kgrid.dx, kgrid.Ny * kgrid.dy]
+    image_res = [256, 256]
+    # b_mode_fund = scan_conversion(scan_lines_fund, steering_angles, image_size, c0, kgrid.dt, image_res)
+    # b_mode_harm = scan_conversion(scan_lines_harm, steering_angles, image_size, c0, kgrid.dt, image_res)
+    b_mode_fund = scan_lines_fund
+    b_mode_harm = scan_lines_harm
+    # Create the axis variables
+    x_axis = [0, image_size[0] * 1e3]  # [mm]
+    y_axis = [0, image_size[1] * 1e3]  # [mm]
+    steering_angles = np.linspace(-30, 30, scan_lines.shape[0])
+
+
+    # plt.ion()
+    plt.figure(figsize=(15, 4))
+    plt.subplot(131)
+    plt.imshow(
+        scan_lines.T, aspect="auto", extent=[steering_angles[-1], steering_angles[0], y_axis[1], y_axis[0]], interpolation="none", cmap="gray"
+    )
+    plt.xlabel("Steering angle [deg]")
+    plt.ylabel("Depth [mm]")
+    plt.title("Raw Scan-Line Data")
+
+
+    plt.subplot(132)
+    plt.imshow(
+        scan_lines_fund.T,
+        aspect="auto",
+        extent=[steering_angles[-1], steering_angles[0], y_axis[1], y_axis[0]],
+        interpolation="none",
+        cmap="bone",
+    )
+    plt.xlabel("Steering angle [deg]")
+    plt.ylabel("Depth [mm]")
+    plt.title("Processed Scan-Line Data")
+
+    plt.subplot(133)
+    plt.imshow(b_mode_fund, cmap="bone", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
+    plt.xlabel("Horizontal Position [mm]")
+    plt.ylabel("Depth [mm]")
+    plt.title("B-Mode Image")
+
+
+    plt.figure(figsize=(15, 4))
+    plt.subplot(131)
+    plt.imshow(medium.sound_speed[..., kgrid.Nz // 2], aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]])
+    plt.xlabel("Horizontal Position [mm]")
+    plt.ylabel("Depth [mm]")
+    plt.title("Scattering Phantom")
+
+    plt.subplot(132)
+    plt.imshow(b_mode_fund, cmap="gray", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
+    plt.xlabel("Horizontal Position [mm]")
+    plt.ylabel("Depth [mm]")
+    plt.title("B-Mode Image")
+
+    plt.subplot(133)
+    plt.imshow(b_mode_harm, cmap="gray", aspect="auto", extent=[y_axis[0], y_axis[1], x_axis[1], x_axis[0]], interpolation="none")
+    plt.xlabel("Horizontal Position [mm]")
+    plt.ylabel("Depth [mm]")
+    plt.title("Harmonic Image")
+
+    plt.show()

@@ -22,8 +22,7 @@ from kwave.reconstruction.beamform import envelope_detection  # type: ignore
 from kwave.utils.mapgen import make_ball  # type: ignore
 
 # internal imports
-from utils_ex.artifacts import visualize_receiver_part
-
+from utils_ex.artifacts import visualize_receiver_part,plot_data_using_phaser_template
 
 # create the computational grid
 def make_grid(grid_size_points, grid_spacing_meters, c0, t_end):
@@ -254,6 +253,17 @@ def process_simulation_data(
                                 t_end=t_end,
                                 args=args
                                 )
+        print("Processing using the newly defined func")
+        plot_data_using_phaser_template(
+            scan_lines=scan_lines,
+            scan_lines_fund = scan_lines_fund,
+            scan_lines_harm = scan_lines_harm,
+            steering_angles=None,
+            c0=c0,
+            kgrid=kgrid,
+            medium=medium,
+            # args
+              )
                                 
     return (
         scan_lines_fund,
